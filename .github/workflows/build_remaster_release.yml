@@ -53,6 +53,16 @@ jobs:
           Set-Content $proj $p
           Select-String -Path $proj -Pattern 'dinput8.lib'
           Select-String -Path $proj -Pattern 'libcmt.lib'
+          # With libcmt linked, the linker pulls CRT startup, which needs WinMain.
+          # Release/intro code defines WinMainCRTStartup instead, but in C++ it
+          # is name-mangled, so the linker cannot see it as the entry point.
+          # Make it extern "C" so it IS the entry point and CRT startup is
+          # never pulled in.
+          $sc = Get-Content -Raw $start
+          if (-not $sc.Contains('void WinMainCRTStartup()')) { throw 'expected WinMainCRTStartup not found in _start.cpp' }
+          $sc = $sc.Replace('void WinMainCRTStartup()', 'extern "C" void WinMainCRTStartup()')
+          Set-Content $start $sc
+          Select-String -Path $start -Pattern 'extern "C" void WinMainCRTStartup'
 
       - name: Install yasm
         run: choco install yasm -y
