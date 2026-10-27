@@ -37,6 +37,16 @@ jobs:
           Set-Content $main $m
           Select-String -Path $start -Pattern 'sPLAYER_SCREENX     1920'
           Select-String -Path $main -Pattern 'GenBitmapTextureSizeOffset = 1;'
+          # Release link lists dinput.lib, which no longer exists in the Windows SDK
+          # (DirectInput is dinput8.lib, which the code itself already uses via
+          # #pragma comment and DirectInput8Create). Debug builds never hit this
+          # because Debug has no AdditionalDependencies at all.
+          $proj = 'werkkzeug3_kkrieger/player_kkrieger/player_kkrieger.vcxproj'
+          $p = Get-Content -Raw $proj
+          if (-not $p.Contains('dinput.lib')) { throw 'expected dinput.lib not found in player vcxproj' }
+          $p = $p.Replace('dinput.lib', 'dinput8.lib')
+          Set-Content $proj $p
+          Select-String -Path $proj -Pattern 'dinput8.lib'
 
       - name: Install yasm
         run: choco install yasm -y
