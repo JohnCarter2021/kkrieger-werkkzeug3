@@ -30,11 +30,11 @@ jobs:
           if (-not $s.Contains('#define sPLAYER_SCREENX     800')) { throw 'expected 800 line not found in _start.cpp' }
           $s = $s.Replace('#define sPLAYER_SCREENX     800', '#define sPLAYER_SCREENX     1920')
           $s = $s.Replace('#define sPLAYER_SCREENY     600', '#define sPLAYER_SCREENY     1080')
-          Set-Content -NoNewline $start $s
+          Set-Content $start $s
           $m = Get-Content -Raw $main
           if (-not $m.Contains('//GenBitmapTextureSizeOffset = -1;')) { throw 'expected texture line not found in kkrieger_main.cpp' }
           $m = $m.Replace('//GenBitmapTextureSizeOffset = -1;', 'GenBitmapTextureSizeOffset = 1;')
-          Set-Content -NoNewline $main $m
+          Set-Content $main $m
           Select-String -Path $start -Pattern 'sPLAYER_SCREENX     1920'
           Select-String -Path $main -Pattern 'GenBitmapTextureSizeOffset = 1;'
 
