@@ -1,11 +1,12 @@
-name: build-remaster-v1
+name: build-remaster-v2
 
 # Builds ONLY the kkrieger player in Release, on a GitHub Windows runner.
 # No Visual Studio install is needed on the player's PC.
-# Trigger: push to the remaster-v1 branch (or manual dispatch).
+# Trigger: push to the remaster-v2 branch (or manual dispatch).
+# v2 = v1 (1080p + double-size textures) + 4x MSAA (with 2x/none fallback).
 on:
   push:
-    branches: ["remaster-v1"]
+    branches: ["remaster-v2"]
   workflow_dispatch:
 
 permissions:
@@ -21,7 +22,7 @@ jobs:
       - name: Setup MSBuild
         uses: microsoft/setup-msbuild@v2
 
-      - name: Apply remaster v1 patches (3 lines, verified)
+      - name: Apply remaster v1+v2 patches (verified)
         shell: powershell
         run: |
           $start = 'werkkzeug3_kkrieger/_start.cpp'
@@ -63,6 +64,41 @@ jobs:
           $sc = $sc.Replace('void WinMainCRTStartup()', 'extern "C" void WinMainCRTStartup()')
           Set-Content $start $sc
           Select-String -Path $start -Pattern 'extern "C" void WinMainCRTStartup'
+          # v2 MSAA: the player (intro) InitScreens builds D3DPRESENT_PARAMETERS
+          # with WINZERO, so MultiSampleType is NONE. Set 4x MSAA, checked
+          # against BOTH the backbuffer format and the D24S8 depth format,
+          # falling back to 2x, then none, so an unsupported GPU still starts.
+          # The intro depth surface must use the same multisample type as the
+          # backbuffer, or D3D9 rejects it.
+          $sc = Get-Content -Raw $start
+          $msAnchor = '  d3dpp.Flags = 0;'
+          if (-not $sc.Contains($msAnchor)) { throw 'expected d3dpp.Flags anchor not found in _start.cpp' }
+          $msLines = @(
+            '  d3dpp.Flags = 0;',
+            '  {',
+            '    DWORD msQuality = 0;',
+            '    BOOL msWindowed = (IntroFlags & sSF_FULLSCREEN) ? FALSE : TRUE;',
+            '    if (SUCCEEDED(DXD->CheckDeviceMultiSampleType(0, D3DDEVTYPE_HAL, (D3DFORMAT) Screen[0].SFormat, msWindowed, D3DMULTISAMPLE_4_SAMPLES, &msQuality)) && SUCCEEDED(DXD->CheckDeviceMultiSampleType(0, D3DDEVTYPE_HAL, (D3DFORMAT) ZBufFormat, msWindowed, D3DMULTISAMPLE_4_SAMPLES, &msQuality)))',
+            '    {',
+            '      d3dpp.MultiSampleType = D3DMULTISAMPLE_4_SAMPLES;',
+            '      d3dpp.MultiSampleQuality = 0;',
+            '    }',
+            '    else if (SUCCEEDED(DXD->CheckDeviceMultiSampleType(0, D3DDEVTYPE_HAL, (D3DFORMAT) Screen[0].SFormat, msWindowed, D3DMULTISAMPLE_2_SAMPLES, &msQuality)) && SUCCEEDED(DXD->CheckDeviceMultiSampleType(0, D3DDEVTYPE_HAL, (D3DFORMAT) ZBufFormat, msWindowed, D3DMULTISAMPLE_2_SAMPLES, &msQuality)))',
+            '    {',
+            '      d3dpp.MultiSampleType = D3DMULTISAMPLE_2_SAMPLES;',
+            '      d3dpp.MultiSampleQuality = 0;',
+            '    }',
+            '  }'
+          )
+          $msCode = $msLines -join "`r`n"
+          $idx = $sc.IndexOf($msAnchor)
+          $sc = $sc.Substring(0, $idx) + $msCode + $sc.Substring($idx + $msAnchor.Length)
+          $depthAnchor = 'CreateDepthStencilSurface(zBufX,zBufY,(D3DFORMAT) ZBufFormat,D3DMULTISAMPLE_NONE,0,FALSE,&ZBuffer,0)'
+          if (-not $sc.Contains($depthAnchor)) { throw 'expected intro depth-surface line not found in _start.cpp' }
+          $sc = $sc.Replace($depthAnchor, 'CreateDepthStencilSurface(zBufX,zBufY,(D3DFORMAT) ZBufFormat,d3dpp.MultiSampleType,d3dpp.MultiSampleQuality,FALSE,&ZBuffer,0)')
+          Set-Content $start $sc
+          Select-String -Path $start -Pattern 'D3DMULTISAMPLE_4_SAMPLES'
+          Select-String -Path $start -Pattern 'd3dpp.MultiSampleType,d3dpp.MultiSampleQuality'
 
       - name: Install yasm
         run: choco install yasm -y
@@ -83,19 +119,19 @@ jobs:
           Copy-Item $exe 'dist/player_kkrieger.exe'
           Copy-Item 'werkkzeug3_kkrieger/data/kkrieger3383.kx' 'dist/kkrieger3383.kx'
           Copy-Item 'run_dist.bat' 'dist/run.bat'
-          Compress-Archive -Path dist/* -DestinationPath kkrieger-remaster-v1-run.zip -Force
-          Get-ChildItem dist, kkrieger-remaster-v1-run.zip | Select-Object Name, Length
+          Compress-Archive -Path dist/* -DestinationPath kkrieger-remaster-v2-run.zip -Force
+          Get-ChildItem dist, kkrieger-remaster-v2-run.zip | Select-Object Name, Length
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: kkrieger-remaster-v1-run
-          path: kkrieger-remaster-v1-run.zip
+          name: kkrieger-remaster-v2-run
+          path: kkrieger-remaster-v2-run.zip
 
       - name: Publish GitHub Release
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG="remaster-v1-${{ github.run_number }}"
-          gh release create "$TAG" --title "kkrieger remaster v1 (1080p) - build $TAG" --notes "Remaster v1: 1920x1080 fullscreen + procedural textures at double size. Run-only: unzip and double-click run.bat. No Visual Studio needed." kkrieger-remaster-v1-run.zip
+          TAG="remaster-v2-${{ github.run_number }}"
+          gh release create "$TAG" --title "kkrieger remaster v2 (1080p + MSAA) - build $TAG" --notes "Remaster v2: v1 (1920x1080 fullscreen + procedural textures at double size) + 4x MSAA with 2x/none fallback. Run-only: unzip and double-click run.bat. No Visual Studio needed." kkrieger-remaster-v2-run.zip
