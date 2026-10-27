@@ -1,11 +1,11 @@
-name: build-remaster-v1
+name: build-remaster-stock
 
 # Builds ONLY the kkrieger player in Release, on a GitHub Windows runner.
 # No Visual Studio install is needed on the player's PC.
 # Trigger: push to the remaster-v1 branch (or manual dispatch).
 on:
   push:
-    branches: ["remaster-v1"]
+    branches: ["remaster-stock-test"]
   workflow_dispatch:
 
 permissions:
@@ -21,22 +21,16 @@ jobs:
       - name: Setup MSBuild
         uses: microsoft/setup-msbuild@v2
 
-      - name: Apply remaster v1 patches (3 lines, verified)
+      - name: Apply stock-test patches (link/entry fixes only, NO graphics changes)
         shell: powershell
         run: |
           $start = 'werkkzeug3_kkrieger/_start.cpp'
           $main = 'werkkzeug3_kkrieger/player_kkrieger/kkrieger_main.cpp'
-          $s = Get-Content -Raw $start
-          if (-not $s.Contains('#define sPLAYER_SCREENX     800')) { throw 'expected 800 line not found in _start.cpp' }
-          $s = $s.Replace('#define sPLAYER_SCREENX     800', '#define sPLAYER_SCREENX     1920')
-          $s = $s.Replace('#define sPLAYER_SCREENY     600', '#define sPLAYER_SCREENY     1080')
-          Set-Content $start $s
-          $m = Get-Content -Raw $main
-          if (-not $m.Contains('//GenBitmapTextureSizeOffset = -1;')) { throw 'expected texture line not found in kkrieger_main.cpp' }
-          $m = $m.Replace('//GenBitmapTextureSizeOffset = -1;', 'GenBitmapTextureSizeOffset = 1;')
-          Set-Content $main $m
-          Select-String -Path $start -Pattern 'sPLAYER_SCREENX     1920'
-          Select-String -Path $main -Pattern 'GenBitmapTextureSizeOffset = 1;'
+          # STOCK TEST: deliberately NO resolution or texture-size change.
+          # If this build also crashes, the cause is the build pipeline
+          # (CRT link / entry point), not the v1 graphics changes.
+          Select-String -Path $start -Pattern 'sPLAYER_SCREENX     800'
+          Select-String -Path $main -Pattern '//GenBitmapTextureSizeOffset = -1;'
           # Release link lists dinput.lib, which no longer exists in the Windows SDK
           # (DirectInput is dinput8.lib, which the code itself already uses via
           # #pragma comment and DirectInput8Create). Debug builds never hit this
@@ -83,19 +77,19 @@ jobs:
           Copy-Item $exe 'dist/player_kkrieger.exe'
           Copy-Item 'werkkzeug3_kkrieger/data/kkrieger3383.kx' 'dist/kkrieger3383.kx'
           Copy-Item 'run_dist.bat' 'dist/run.bat'
-          Compress-Archive -Path dist/* -DestinationPath kkrieger-remaster-v1-run.zip -Force
-          Get-ChildItem dist, kkrieger-remaster-v1-run.zip | Select-Object Name, Length
+          Compress-Archive -Path dist/* -DestinationPath kkrieger-stock-test-run.zip -Force
+          Get-ChildItem dist, kkrieger-stock-test-run.zip | Select-Object Name, Length
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: kkrieger-remaster-v1-run
-          path: kkrieger-remaster-v1-run.zip
+          name: kkrieger-stock-test-run
+          path: kkrieger-stock-test-run.zip
 
       - name: Publish GitHub Release
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG="remaster-v1-${{ github.run_number }}"
-          gh release create "$TAG" --title "kkrieger remaster v1 (1080p) - build $TAG" --notes "Remaster v1: 1920x1080 fullscreen + procedural textures at double size. Run-only: unzip and double-click run.bat. No Visual Studio needed." kkrieger-remaster-v1-run.zip
+          TAG="stock-test-${{ github.run_number }}"
+          gh release create "$TAG" --title "kkrieger stock test (800x600, stock textures) - build $TAG" --notes "Stock test: same cloud build pipeline as v1, but stock 800x600 and stock texture size. Run-only: unzip and double-click run.bat. No Visual Studio needed." kkrieger-stock-test-run.zip
