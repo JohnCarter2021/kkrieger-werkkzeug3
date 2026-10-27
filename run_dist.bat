@@ -1,5 +1,5 @@
 @echo off
-REM kkrieger-remaster-v1 run-only launcher.
+REM kkrieger-stock-test run-only launcher.
 REM Unzip, double-click this file. No Visual Studio, no build step.
 REM The player takes the data file as its command-line argument, so
 REM this file must stay in the same folder as kkrieger3383.kx.
@@ -14,8 +14,8 @@ if not exist "kkrieger3383.kx" (
   pause
   exit /b 1
 )
-echo Starting kkrieger-remaster-v1 at 1920x1080 fullscreen...
-echo Expect a longer load than the original: textures generate at double size.
+echo Starting kkrieger stock test at 800x600...
+echo Stock textures, so load should be like the original..
 player_kkrieger.exe kkrieger3383.kx
 echo.
 echo Game exited with code %ERRORLEVEL%.
