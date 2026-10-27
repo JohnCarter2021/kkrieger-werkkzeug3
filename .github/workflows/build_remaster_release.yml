@@ -1,0 +1,72 @@
+name: build-remaster-v1
+
+# Builds ONLY the kkrieger player in Release, on a GitHub Windows runner.
+# No Visual Studio install is needed on the player's PC.
+# Trigger: push to the remaster-v1 branch (or manual dispatch).
+on:
+  push:
+    branches: ["remaster-v1"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-2022
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Apply remaster v1 patches (3 lines, verified)
+        shell: powershell
+        run: |
+          $start = 'werkkzeug3_kkrieger/_start.cpp'
+          $main = 'werkkzeug3_kkrieger/player_kkrieger/kkrieger_main.cpp'
+          $s = Get-Content -Raw $start
+          if (-not $s.Contains('#define sPLAYER_SCREENX     800')) { throw 'expected 800 line not found in _start.cpp' }
+          $s = $s.Replace('#define sPLAYER_SCREENX     800', '#define sPLAYER_SCREENX     1920')
+          $s = $s.Replace('#define sPLAYER_SCREENY     600', '#define sPLAYER_SCREENY     1080')
+          Set-Content -NoNewline $start $s
+          $m = Get-Content -Raw $main
+          if (-not $m.Contains('//GenBitmapTextureSizeOffset = -1;')) { throw 'expected texture line not found in kkrieger_main.cpp' }
+          $m = $m.Replace('//GenBitmapTextureSizeOffset = -1;', 'GenBitmapTextureSizeOffset = 1;')
+          Set-Content -NoNewline $main $m
+          Select-String -Path $start -Pattern 'sPLAYER_SCREENX     1920'
+          Select-String -Path $main -Pattern 'GenBitmapTextureSizeOffset = 1;'
+
+      - name: Install yasm
+        run: choco install yasm -y
+        shell: powershell
+
+      - name: Build player (Release, Win32)
+        run: msbuild 'werkkzeug3_kkrieger/player_kkrieger/player_kkrieger.vcxproj' /p:Configuration=Release /p:Platform=Win32
+
+      - name: Package run-only build
+        shell: powershell
+        run: |
+          $exe = 'werkkzeug3_kkrieger/player_kkrieger/Release/player_kkrieger.exe'
+          if (-not (Test-Path $exe)) { throw "player exe not found at $exe" }
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Copy-Item $exe 'dist/player_kkrieger.exe'
+          Copy-Item 'werkkzeug3_kkrieger/data/kkrieger3383.kx' 'dist/kkrieger3383.kx'
+          Copy-Item 'run_dist.bat' 'dist/run.bat'
+          Compress-Archive -Path dist/* -DestinationPath kkrieger-remaster-v1-run.zip -Force
+          Get-ChildItem dist, kkrieger-remaster-v1-run.zip | Select-Object Name, Length
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: kkrieger-remaster-v1-run
+          path: kkrieger-remaster-v1-run.zip
+
+      - name: Publish GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="remaster-v1-${{ github.run_number }}"
+          gh release create "$TAG" --title "kkrieger remaster v1 (1080p) - build $TAG" --notes "Remaster v1: 1920x1080 fullscreen + procedural textures at double size. Run-only: unzip and double-click run.bat. No Visual Studio needed." kkrieger-remaster-v1-run.zip
