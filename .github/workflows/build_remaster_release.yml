@@ -45,8 +45,14 @@ jobs:
           $p = Get-Content -Raw $proj
           if (-not $p.Contains('dinput.lib')) { throw 'expected dinput.lib not found in player vcxproj' }
           $p = $p.Replace('dinput.lib', 'dinput8.lib')
+          # Release uses /nodefaultlib (custom WinMainCRTStartup, size-optimized
+          # original), so the CRT/math/RTTI helpers the compiler now emits as
+          # calls (memcpy, memset, __libm_sse2_*, __CIatan2, type_info) are
+          # unresolved. Link them explicitly; size no longer matters for v1.
+          $p = $p.Replace('winmm.lib;dxguid.lib;dinput8.lib;', 'winmm.lib;dxguid.lib;dinput8.lib;libcmt.lib;libvcruntime.lib;libucrt.lib;libcpmt.lib;oldnames.lib;')
           Set-Content $proj $p
           Select-String -Path $proj -Pattern 'dinput8.lib'
+          Select-String -Path $proj -Pattern 'libcmt.lib'
 
       - name: Install yasm
         run: choco install yasm -y
