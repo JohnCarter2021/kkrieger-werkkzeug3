@@ -43,7 +43,10 @@ jobs:
         shell: powershell
 
       - name: Build player (Release, Win32)
-        run: msbuild 'werkkzeug3_kkrieger/player_kkrieger/player_kkrieger.vcxproj' /p:Configuration=Release /p:Platform=Win32
+        # The project force-includes $(SolutionDir)/player_kkrieger/kkrieger_config.hpp.
+        # Building a .vcxproj alone leaves SolutionDir pointing at the project folder,
+        # which doubles the path and fails with C1083. Point it at the solution folder.
+        run: msbuild 'werkkzeug3_kkrieger/player_kkrieger/player_kkrieger.vcxproj' /p:Configuration=Release /p:Platform=Win32 "/p:SolutionDir=$env:GITHUB_WORKSPACE/werkkzeug3_kkrieger/"
 
       - name: Package run-only build
         shell: powershell
